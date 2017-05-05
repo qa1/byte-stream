@@ -61,12 +61,13 @@ class ResourceOutputStream implements OutputStream {
 
                     if ($written === false || $written === 0) {
                         $writable = false;
+                        \stream_socket_shutdown($this->resource, \STREAM_SHUT_WR);
 
                         $message = "Failed to write to socket";
                         if ($error = \error_get_last()) {
                             $message .= \sprintf(" Errno: %d; %s", $error["type"], $error["message"]);
                         }
-                        $exception = new \Exception($message);
+                        $exception = new StreamException($message);
                         $deferred->fail($exception);
                         while (!$writes->isEmpty()) {
                             list(, , $deferred) = $writes->shift();
@@ -128,7 +129,7 @@ class ResourceOutputStream implements OutputStream {
      */
     private function send(string $data, bool $end = false): Promise {
         if (!$this->writable) {
-            return new Failure(new \Exception("The stream is not writable"));
+            return new Failure(new StreamException("The stream is not writable"));
         }
 
         $length = \strlen($data);
@@ -141,7 +142,7 @@ class ResourceOutputStream implements OutputStream {
         if ($this->writes->isEmpty()) {
             if ($length === 0) {
                 if ($end) {
-                    $this->close();
+                    \stream_socket_shutdown($this->resource, \STREAM_SHUT_WR);
                 }
                 return new Success(0);
             }
@@ -159,7 +160,7 @@ class ResourceOutputStream implements OutputStream {
 
             if ($length === $written) {
                 if ($end) {
-                    $this->close();
+                    \stream_socket_shutdown($this->resource, \STREAM_SHUT_WR);
                 }
                 return new Success($written);
             }
@@ -173,7 +174,12 @@ class ResourceOutputStream implements OutputStream {
         $promise = $deferred->promise();
 
         if ($end) {
-            $promise->onResolve([$this, 'close']);
+            $resource = $this->resource;
+            $promise->onResolve(static function () use ($resource) {
+                if (\is_resource($resource)) {
+                    \stream_socket_shutdown($resource, \STREAM_SHUT_WR);
+                }
+            });
         }
 
         return $promise;
