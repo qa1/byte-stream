@@ -5,6 +5,7 @@ namespace Amp\ByteStream;
 use Amp\PHPUnit\AsyncTestCase;
 use Amp\PHPUnit\TestException;
 use Amp\Pipeline\Queue;
+use function Amp\async;
 
 final class ReadableIterableStreamTest extends AsyncTestCase
 {
@@ -99,5 +100,20 @@ final class ReadableIterableStreamTest extends AsyncTestCase
     {
         $stream = new ReadableIterableStream($iterable);
         self::assertSame($stream->read(), 'abc');
+    }
+
+    public function testClose(): void
+    {
+        $source = new Queue;
+        $stream = new ReadableIterableStream($source->pipe());
+
+        $future = async(fn () => $stream->read());
+
+        async(fn () => $stream->close());
+
+        $this->expectException(ClosedException::class);
+        $this->expectExceptionMessage('Stream manually closed');
+
+        $future->await();
     }
 }
